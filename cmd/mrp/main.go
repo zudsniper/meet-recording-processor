@@ -14,6 +14,7 @@ import (
     "github.com/zudsniper/meet-recording-processor/internal/media"
     "github.com/zudsniper/meet-recording-processor/internal/output"
     "github.com/zudsniper/meet-recording-processor/internal/transcribe"
+    "github.com/zudsniper/meet-recording-processor/internal/version"
 )
 
 const (
@@ -78,6 +79,8 @@ func main() {
 
         localModel   string
         localDevice  string
+
+        showVersion bool
     )
 
     flag.StringVar(&inPath, "input", "", "Input video file path (-i)")
@@ -102,8 +105,14 @@ func main() {
 
     flag.StringVar(&localModel, "local-model", "base.en", "faster-whisper model name or path (e.g., base.en, medium, or local path)")
     flag.StringVar(&localDevice, "local-device", "auto", "Device for local model: auto|cpu|cuda (default respects MRP_DEFAULT_LOCAL_DEVICE)")
+    flag.BoolVar(&showVersion, "version", false, "Print mrp version and exit")
 
     flag.Parse()
+
+    if showVersion {
+        fmt.Println(version.Version)
+        return
+    }
 
     if inPath == "" {
         fail("missing --input/-i video path")

@@ -6,9 +6,16 @@ set -euo pipefail
 # Usage (non-interactive): curl -fsSL ... | bash -s -- -y
 
 YES="false"
+FORCE="false"
 if [[ ${1:-} == "-y" || ${1:-} == "--yes" || ${1:-} == "--non-interactive" ]]; then
   YES="true"
 fi
+if [[ ${1:-} == "-f" || ${1:-} == "--force" ]]; then
+  FORCE="true"
+fi
+
+# Target version of mrp this installer aims to install
+TARGET_VERSION="0.1.0"
 
 emoji_info="[\033[34mℹ\033[0m]"
 emoji_ok="[\033[32m✔\033[0m]"
@@ -256,6 +263,55 @@ main() {
   detect_os
   detect_arch
   if [[ "$OS" == "linux" ]]; then detect_pkg_manager; fi
+
+  # If mrp is installed and up-to-date, we can skip heavy work unless --force
+  if command -v mrp >/dev/null 2>&1; then
+    INSTALLED_VERSION=$(mrp --version 2>/dev/null || true)
+    if [[ -n "$INSTALLED_VERSION" ]]; then
+      say "Detected installed mrp version: $INSTALLED_VERSION"
+      # simple semver compare: if installed >= target and not force -> skip
+      semver_ge() {
+        # returns 0 if $1 >= $2
+        local IFS=.
+        local i ver1=($1) ver2=($2)
+        for ((i=${#ver1[@]}; i<${#ver2[@]}; i++)); do ver1[i]=0; done
+        for ((i=${#ver2[@]}; i<${#ver1[@]}; i++)); do ver2[i]=0; done
+        for ((i=0; i<${#ver1[@]}; i++)); do
+          if ((10#${ver1[i]} > 10#${ver2[i]})); then return 0; fi
+          if ((10#${ver1[i]} < 10#${ver2[i]})); then return 1; fi
+        done
+        return 0
+      }
+      if semver_ge "$INSTALLED_VERSION" "$TARGET_VERSION" && [[ "$FORCE" == "false" ]]; then
+        ok "mrp is up-to-date (>= $TARGET_VERSION)."
+        echo
+        say "Quick usage guide 📘"
+        cat << 'EOG'
+
+Examples:
+
+1) Local transcription (CPU/GPU auto):
+   mrp -i ~/Downloads/Top8Meeting.mp4 --backend local -o Top8Meeting.md \
+       --title "Top 8 Meeting" --description "Weekly status"
+
+2) Local transcription (CUDA GPU):
+   mrp -i ~/Downloads/Top8Meeting.mp4 --backend local --local-device cuda \
+       --local-model base.en -o Top8Meeting.md
+
+3) OpenAI transcription (requires OPENAI_API_KEY):
+   mrp -i meeting.mp4 --backend openai --model gpt-4o-mini-transcribe -o transcript.md
+
+4) Cloudflare Workers AI (requires CF_ACCOUNT_ID, CF_API_TOKEN):
+   mrp -i meeting.mp4 --backend cloudflare --cf-model @cf/openai/whisper -o transcript.md
+
+5) Add simple diarization (heuristic gaps):
+   mrp -i meeting.mp4 --backend local --diarization silence -o transcript.md
+
+EOG
+        exit 0
+      fi
+    fi
+  fi
 
   say "Checking and installing prerequisites 🧩"
   if [[ "$OS" == "mac" ]]; then

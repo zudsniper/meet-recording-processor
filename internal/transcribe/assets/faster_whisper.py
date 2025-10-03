@@ -29,11 +29,23 @@ def main():
         compute_type = 'int8'
 
     t0 = perf_counter()
-    model = WhisperModel(args.model, device=device if device!='auto' else None, compute_type=compute_type)
+    try:
+        model = WhisperModel(args.model, device=device if device!='auto' else None, compute_type=compute_type)
+        device_used = device
+    except Exception as e:
+        # Fallback to CPU if CUDA/cuDNN missing or broken
+        msg = str(e).lower()
+        if args.device == 'cuda' and ("cudnn" in msg or "cuda" in msg or "invalid handle" in msg):
+            sys.stderr.write('CUDA initialization failed; falling back to CPU (int8).\n')
+            device_used = 'cpu'
+            model = WhisperModel(args.model, device=None, compute_type='int8')
+        else:
+            raise
     segments, info = model.transcribe(args.audio)
     out = {
         'language': getattr(info, 'language', ''),
         'duration': getattr(info, 'duration', 0.0),
+        'device_used': device_used,
         'segments': [
             {
                 'start': float(s.start),
@@ -47,4 +59,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
