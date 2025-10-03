@@ -15,7 +15,7 @@ if [[ ${1:-} == "-f" || ${1:-} == "--force" ]]; then
 fi
 
 # Target version of mrp this installer aims to install
-TARGET_VERSION="0.1.0"
+TARGET_VERSION="0.1.1"
 
 emoji_info="[\033[34mℹ\033[0m]"
 emoji_ok="[\033[32m✔\033[0m]"
