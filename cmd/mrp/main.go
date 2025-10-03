@@ -10,6 +10,7 @@ import (
     "strings"
     "time"
 
+    "github.com/zudsniper/meet-recording-processor/internal/config"
     "github.com/zudsniper/meet-recording-processor/internal/diarize"
     "github.com/zudsniper/meet-recording-processor/internal/media"
     "github.com/zudsniper/meet-recording-processor/internal/output"
@@ -59,6 +60,9 @@ func (s *stringSlice) Set(v string) error {
 }
 
 func main() {
+    // Load env early so flags that default to env pick up values from ~/.mrp.env
+    config.LoadDefaultEnv()
+
     var (
         inPath    string
         outPath   string
@@ -96,11 +100,11 @@ func main() {
     flag.StringVar(&eventDesc, "description", "", "Event description metadata")
     flag.Var(&attendees, "attendee", "Attendee name (repeatable or comma-separated)")
 
-    flag.StringVar(&openaiAPIKey, "openai-api-key", os.Getenv("OPENAI_API_KEY"), "OpenAI API key (or set OPENAI_API_KEY)")
+    flag.StringVar(&openaiAPIKey, "openai-api-key", os.Getenv("OPENAI_API_KEY"), "OpenAI API key (or set OPENAI_API_KEY, or in ~/.mrp.env)")
     flag.StringVar(&openaiModel, "openai-model", "gpt-4o-mini-transcribe", "OpenAI transcription model")
 
-    flag.StringVar(&cfAccountID, "cf-account-id", os.Getenv("CF_ACCOUNT_ID"), "Cloudflare Account ID (or CF_ACCOUNT_ID)")
-    flag.StringVar(&cfAPIToken, "cf-api-token", os.Getenv("CF_API_TOKEN"), "Cloudflare API Token (or CF_API_TOKEN)")
+    flag.StringVar(&cfAccountID, "cf-account-id", os.Getenv("CF_ACCOUNT_ID"), "Cloudflare Account ID (or CF_ACCOUNT_ID, or in ~/.mrp.env)")
+    flag.StringVar(&cfAPIToken, "cf-api-token", os.Getenv("CF_API_TOKEN"), "Cloudflare API Token (or CF_API_TOKEN, or in ~/.mrp.env)")
     flag.StringVar(&cfModel, "cf-model", "@cf/openai/whisper", "Cloudflare AI model identifier")
 
     flag.StringVar(&localModel, "local-model", "base.en", "faster-whisper model name or path (e.g., base.en, medium, or local path)")
@@ -112,6 +116,17 @@ func main() {
     if showVersion {
         fmt.Println(version.Version)
         return
+    }
+
+    // If flags not provided, re-read env in case the shell didn’t source ~/.mrp.env
+    if openaiAPIKey == "" {
+        openaiAPIKey = os.Getenv("OPENAI_API_KEY")
+    }
+    if cfAccountID == "" {
+        cfAccountID = os.Getenv("CF_ACCOUNT_ID")
+    }
+    if cfAPIToken == "" {
+        cfAPIToken = os.Getenv("CF_API_TOKEN")
     }
 
     if inPath == "" {
