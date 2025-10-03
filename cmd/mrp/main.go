@@ -5,6 +5,7 @@ import (
     "flag"
     "fmt"
     "os"
+    "os/exec"
     "path/filepath"
     "strings"
     "time"
@@ -159,6 +160,12 @@ func main() {
                 localDevice = envDev2
             }
         }
+        if py, err := ensureLocalFasterWhisper(ctx); err != nil {
+            fail("local backend setup failed: %v", err)
+            os.Exit(1)
+        } else if py != "" {
+            os.Setenv("MRP_PY", py)
+        }
         be = transcribe.NewFasterWhisperBackend(localModel, localDevice)
     default:
         fail("unknown backend: %s", backend)
@@ -222,4 +229,71 @@ func modelFromBackend(backend, openaiModel, cfModel, localModel string) string {
     default:
         return ""
     }
+}
+
+// ensureLocalFasterWhisper ensures a functional Python environment with faster-whisper installed.
+// It attempts to use $MRP_PY, then ~/.mrp/venv, or creates a new venv and installs packages.
+// Returns the python interpreter path to use (may be empty if unchanged).
+func ensureLocalFasterWhisper(ctx context.Context) (string, error) {
+    // If MRP_PY provided and usable, keep it
+    if py := strings.TrimSpace(os.Getenv("MRP_PY")); py != "" {
+        if err := fwImportCheck(ctx, py); err == nil {
+            return py, nil
+        }
+    }
+
+    home, err := os.UserHomeDir()
+    if err != nil { return "", fmt.Errorf("home dir: %w", err) }
+    venvDir := filepath.Join(home, ".mrp", "venv")
+    pyPath := filepath.Join(venvDir, "bin", "python")
+
+    // If venv exists and faster-whisper is installed, use it
+    if _, err := os.Stat(pyPath); err == nil {
+        if err := fwImportCheck(ctx, pyPath); err == nil {
+            return pyPath, nil
+        }
+    }
+
+    // Otherwise, bootstrap venv and install faster-whisper
+    // Require python3 to be available
+    if _, err := exec.LookPath("python3"); err != nil {
+        return "", fmt.Errorf("python3 not found; please run scripts/install.sh or install Python 3")
+    }
+
+    info("Setting up local faster-whisper environment (venv + pip install)...")
+    if err := os.MkdirAll(filepath.Dir(venvDir), 0o755); err != nil {
+        return "", fmt.Errorf("mkdir: %w", err)
+    }
+    if _, err := os.Stat(venvDir); os.IsNotExist(err) {
+        if err := execCmd(ctx, "python3", "-m", "venv", venvDir); err != nil {
+            return "", fmt.Errorf("create venv: %w", err)
+        }
+    }
+    if err := execCmd(ctx, pyPath, "-m", "pip", "install", "--upgrade", "pip"); err != nil {
+        return "", fmt.Errorf("upgrade pip: %w", err)
+    }
+    if err := execCmd(ctx, pyPath, "-m", "pip", "install", "faster-whisper"); err != nil {
+        return "", fmt.Errorf("install faster-whisper: %w", err)
+    }
+    if err := fwImportCheck(ctx, pyPath); err != nil {
+        return "", fmt.Errorf("verify faster-whisper: %w", err)
+    }
+    ok("Local faster-whisper ready")
+    return pyPath, nil
+}
+
+func fwImportCheck(ctx context.Context, py string) error {
+    cmd := exec.CommandContext(ctx, py, "-c", "import faster_whisper; print('ok')")
+    cmd.Env = os.Environ()
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    return cmd.Run()
+}
+
+func execCmd(ctx context.Context, name string, args ...string) error {
+    cmd := exec.CommandContext(ctx, name, args...)
+    cmd.Env = os.Environ()
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    return cmd.Run()
 }
