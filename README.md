@@ -117,7 +117,7 @@ These can be integrated later as a separate backend/module without changing the 
 - Local backend errors about Python or faster-whisper:
   - The installer creates a venv at `~/.mrp/venv` and sets `MRP_PY` to that interpreter. Ensure your shell loaded `~/.mrp.env` or run `export MRP_PY=$HOME/.mrp/venv/bin/python`.
 - CUDA not used when expected:
-  - Add `--local-device cuda`. Ensure CUDA toolkit and compatible drivers are installed.
+  - Add `--local-device cuda`. Ensure NVIDIA drivers, CUDA runtime, and cuDNN are installed. On Ubuntu, the installer can optionally install `nvidia-cudnn` (requires multiverse). If CUDA init still fails, the tool automatically falls back to CPU.
 
 ## Future Direction
 

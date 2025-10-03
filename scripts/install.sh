@@ -188,6 +188,33 @@ persist_env_kv() {
   fi
 }
 
+validate_cuda_venv() {
+  # Validates that the venv Python can use CUDA with faster-whisper
+  local venv_dir="$HOME/.mrp/venv"
+  local py="$venv_dir/bin/python"
+  [[ -x "$py" ]] || return 1
+  "$py" - <<'PY'
+import sys
+try:
+    from faster_whisper import WhisperModel
+    WhisperModel('base.en', device='cuda', compute_type='float16')
+    print('CUDA_OK')
+except Exception as e:
+    print('CUDA_ERR', e)
+    sys.exit(2)
+PY
+}
+
+gpu_setup_linux() {
+  # Best-effort: install cuDNN package if available on Ubuntu
+  if [[ "$pkg_manager" == "apt-get" ]]; then
+    say "Attempting to install NVIDIA cuDNN from Ubuntu repos (multiverse)."
+    run "Installing nvidia-cudnn" $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y nvidia-cudnn || true
+  else
+    warn "GPU setup automation is only implemented for apt-get systems."
+  fi
+}
+
 install_go_linux() {
   local GOV=1.22.0
   local OSSTR=linux
@@ -336,6 +363,29 @@ EOG
       read -r -p "Use CUDA by default for local transcription? [Y/n] " ans; ans=${ans:-Y}
       if [[ $ans =~ ^[Yy]$ ]]; then DEFAULT_LOCAL_DEVICE="cuda"; else DEFAULT_LOCAL_DEVICE="cpu"; fi
     fi
+
+    if [[ "$DEFAULT_LOCAL_DEVICE" == "cuda" ]]; then
+      # Validate CUDA readiness in venv; if not OK, offer to install cuDNN package (Ubuntu)
+      if ! validate_cuda_venv | grep -q CUDA_OK; then
+        warn "CUDA in Python venv is not ready (cuDNN/CUDA libraries missing)."
+        if [[ "$OS" == "linux" && "$pkg_manager" == "apt-get" && "$YES" == "false" ]]; then
+          read -r -p "Try to install NVIDIA cuDNN via apt now? [y/N] " do_cudnn; do_cudnn=${do_cudnn:-N}
+          if [[ $do_cudnn =~ ^[Yy]$ ]]; then gpu_setup_linux; fi
+        else
+          gpu_setup_linux || true
+        fi
+        # Re-validate
+        if ! validate_cuda_venv | grep -q CUDA_OK; then
+          warn "CUDA still not ready; defaulting to CPU for reliability. You can retry later after installing drivers/CUDA/cuDNN."
+          DEFAULT_LOCAL_DEVICE="cpu"
+        else
+          ok "CUDA ready in venv."
+        fi
+      else
+        ok "CUDA ready in venv."
+      fi
+    fi
+
     persist_env_kv "MRP_DEFAULT_LOCAL_DEVICE" "$DEFAULT_LOCAL_DEVICE"
     ok "Default local device set to: $DEFAULT_LOCAL_DEVICE (persisted in ~/.mrp.env)"
   else
