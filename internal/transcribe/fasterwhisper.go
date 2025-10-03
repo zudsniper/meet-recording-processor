@@ -2,7 +2,7 @@ package transcribe
 
 import (
     "context"
-    "embed"
+    _ "embed"
     "encoding/json"
     "fmt"
     "os"

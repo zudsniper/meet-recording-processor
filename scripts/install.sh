@@ -21,11 +21,11 @@ spinner() {
   local i=0
   tput civis || true
   while kill -0 "$pid" 2>/dev/null; do
-    printf "\r%s %s %s" "$emoji_info" "${frames[$i]}" "$msg"
+    printf "\r\033[K%b %s %s" "$emoji_info" "${frames[$i]}" "$msg"
     i=$(((i+1)%${#frames[@]}))
     sleep 0.12
   done
-  printf "\r"
+  printf "\r\033[K"
   tput cnorm || true
 }
 
@@ -36,8 +36,8 @@ run() {
   ("$@" >"$log" 2>&1) &
   local pid=$!
   spinner "$pid" "$msg"
-  wait "$pid" && { printf "%s %s\n" "$emoji_ok" "$msg"; rm -f "$log"; return 0; } || {
-    printf "%s %s\n" "$emoji_err" "$msg"
+  wait "$pid" && { ok "$msg"; rm -f "$log"; return 0; } || {
+    err "$msg"
     printf "\n$emoji_err Command failed. Logs:\n"
     sed 's/^/  /' "$log" || true
     rm -f "$log"
@@ -196,11 +196,15 @@ build_and_install_mrp() {
 setup_env() {
   if [[ "$YES" == "false" ]]; then
     echo
-    read -r -p "Add API keys now? [y/N] " do_keys; do_keys=${do_keys:-N}
+    echo "You can optionally set cloud API keys for remote transcription backends."
+    echo "- OpenAI: used with --backend openai"
+    echo "- Cloudflare: used with --backend cloudflare"
+    echo "Local faster-whisper needs no keys."
+    read -r -p "Add optional API keys now? [y/N] " do_keys; do_keys=${do_keys:-N}
     if [[ $do_keys =~ ^[Yy]$ ]]; then
-      read -r -p "OpenAI API key (leave blank to skip): " OPENAI_API_KEY || true
-      read -r -p "Cloudflare Account ID (blank to skip): " CF_ACCOUNT_ID || true
-      read -r -p "Cloudflare API Token (blank to skip): " CF_API_TOKEN || true
+      read -r -p "OpenAI API key (for --backend openai, blank to skip): " OPENAI_API_KEY || true
+      read -r -p "Cloudflare Account ID (for --backend cloudflare, blank to skip): " CF_ACCOUNT_ID || true
+      read -r -p "Cloudflare API Token (for --backend cloudflare, blank to skip): " CF_API_TOKEN || true
       local envfile="$HOME/.mrp.env"
       {
         [[ -n "${OPENAI_API_KEY:-}" ]] && echo "export OPENAI_API_KEY='$OPENAI_API_KEY'"
@@ -250,6 +254,49 @@ main() {
   ok "Installation complete! ✨ Try: \033[1m mrp --help \033[0m"
   say "Local backend uses faster-whisper in a venv."
   say "Ubuntu ${DISTRO_VERSION_ID:-} detected: using apt-get where applicable."
+
+  echo
+  say "Quick usage guide 📘"
+  cat << 'EOG'
+
+Examples:
+
+1) Local transcription (CPU/GPU auto):
+   mrp -i ~/Downloads/Top8Meeting.mp4 --backend local -o Top8Meeting.md \
+       --title "Top 8 Meeting" --description "Weekly status"
+
+2) Local transcription (CUDA GPU):
+   mrp -i ~/Downloads/Top8Meeting.mp4 --backend local --local-device cuda \
+       --local-model base.en -o Top8Meeting.md
+
+3) OpenAI transcription (requires OPENAI_API_KEY):
+   mrp -i meeting.mp4 --backend openai --model gpt-4o-mini-transcribe -o transcript.md
+
+4) Cloudflare Workers AI (requires CF_ACCOUNT_ID, CF_API_TOKEN):
+   mrp -i meeting.mp4 --backend cloudflare --cf-model @cf/openai/whisper -o transcript.md
+
+5) Add simple diarization (heuristic gaps):
+   mrp -i meeting.mp4 --backend local --diarization silence -o transcript.md
+
+Common flags:
+  --input|-i <file>        Input video path
+  --output|-o <file.md>    Output markdown (default: <video>.md)
+  --backend                openai | cloudflare | local
+  --model                  Backend-specific model override
+  --diarization            none | silence
+  --title                  Event title metadata
+  --description            Event description metadata
+  --attendee <name>        Repeatable attendee metadata
+Local backend extras:
+  --local-model <name|path>  faster-whisper model (e.g., base.en, small)
+  --local-device auto|cpu|cuda
+
+Notes:
+  - Local backend uses Python venv at ~/.mrp/venv (MRP_PY exported).
+  - To use OpenAI/Cloudflare, set API keys in ~/.mrp.env or your shell.
+  - Ensure your PATH contains /usr/local/bin or ~/.local/bin for 'mrp'.
+
+EOG
 }
 
 main "$@"

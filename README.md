@@ -1,30 +1,41 @@
 # Meet Recording Processor (CLI)
 
-A pluggable Go CLI to extract audio from a meeting recording and transcribe it via one of several backends (OpenAI, Cloudflare Workers AI, local faster-whisper). Minimal, expandable design for future automation.
+A pluggable Go CLI that extracts audio from meeting recordings (via `ffmpeg`) and transcribes them with one of multiple backends:
+
+- OpenAI Audio Transcriptions API
+- Cloudflare Workers AI (`@cf/openai/whisper`)
+- Local faster-whisper (GPU-friendly; via a small embedded Python helper)
+
+Designed to evolve into an automated service later (e.g., trigger on Google Drive upload), while remaining simple and fast locally today.
 
 ## Requirements
 
 - `ffmpeg` in PATH
-- For OpenAI backend: `OPENAI_API_KEY` env var (or `--openai-api-key`)
-- For Cloudflare backend: `CF_ACCOUNT_ID` and `CF_API_TOKEN` env vars (or flags)
-- For local backend: Python 3; installer sets up a venv at `~/.mrp/venv` and installs `faster-whisper` there, exporting `MRP_PY`.
+- OpenAI backend: `OPENAI_API_KEY` env var (or `--openai-api-key`)
+- Cloudflare backend: `CF_ACCOUNT_ID` and `CF_API_TOKEN` env vars (or flags)
+- Local backend: Python 3; the installer sets up a venv at `~/.mrp/venv` and installs `faster-whisper`, exporting `MRP_PY` to that interpreter.
 
-## Build
+## Build / Install
+
+Build from source:
 
 ```
 go build -o mrp ./cmd/mrp
 ```
 
+Installer (interactive):
+
+```
+curl -fsSL https://raw.githubusercontent.com/zudsniper/meet-recording-processor/main/scripts/install.sh | bash
+```
+
+Non-interactive (accept defaults):
+
+```
+curl -fsSL https://raw.githubusercontent.com/zudsniper/meet-recording-processor/main/scripts/install.sh | bash -s -- -y
+```
+
 ## Usage
-
-```
-./mrp --input meeting.mp4 --backend openai -o transcript.md \
-  --title "Weekly Sync" --description "Sprint planning" --attendee "Alice" --attendee "Bob"
-
-./mrp -i meeting.mp4 --backend cloudflare --cf-model @cf/openai/whisper -o transcript.md
-
-./mrp -i meeting.mp4 --backend local --local-model base.en -o transcript.md
-```
 
 Common flags:
 
@@ -35,6 +46,12 @@ Common flags:
 - `--tmpdir`: temp directory for intermediate audio
 - `--diarization`: `none` (default) | `silence` (heuristic alternating speakers on gaps)
 - Metadata: `--title`, `--description`, `--attendee` (repeatable)
+
+Local faster-whisper specific:
+
+- `--local-model` (e.g., `base.en`, `small`, or local path)
+- `--local-device` `auto|cpu|cuda` (default `auto`)
+- `MRP_PY` env var controls which Python interpreter is used (installer sets it to the venv python).
 
 OpenAI-specific:
 
@@ -47,11 +64,39 @@ Cloudflare-specific:
 - `--cf-api-token` (or env `CF_API_TOKEN`)
 - `--cf-model` (default `@cf/openai/whisper`)
 
-Local faster-whisper specific:
+### Quick Examples
 
-- `--local-model` (e.g., `base.en`, `small`, or local path)
-- `--local-device` `auto|cpu|cuda` (default `auto`)
-- `MRP_PY` env var controls which Python interpreter is used for local transcription (installer sets it to the venv python).
+Local (CPU/GPU auto):
+
+```
+mrp -i ~/Downloads/Top8Meeting.mp4 --backend local -o Top8Meeting.md \
+    --title "Top 8 Meeting" --description "Weekly status"
+```
+
+Local with CUDA GPU:
+
+```
+mrp -i ~/Downloads/Top8Meeting.mp4 --backend local --local-device cuda \
+    --local-model base.en -o Top8Meeting.md
+```
+
+OpenAI (needs `OPENAI_API_KEY`):
+
+```
+mrp -i meeting.mp4 --backend openai --model gpt-4o-mini-transcribe -o transcript.md
+```
+
+Cloudflare (needs `CF_ACCOUNT_ID` and `CF_API_TOKEN`):
+
+```
+mrp -i meeting.mp4 --backend cloudflare --cf-model @cf/openai/whisper -o transcript.md
+```
+
+Diarization (simple heuristic):
+
+```
+mrp -i meeting.mp4 --backend local --diarization silence -o transcript.md
+```
 
 ## Notes on Diarization
 
@@ -63,19 +108,19 @@ This initial version includes a minimal `--diarization silence` mode that altern
 
 These can be integrated later as a separate backend/module without changing the CLI surface.
 
+## Troubleshooting
+
+- `mrp: command not found`:
+  - Ensure `/usr/local/bin` or `$HOME/.local/bin` is in your `PATH`.
+- `ffmpeg not found`:
+  - Re-run the installer; it will install ffmpeg via your package manager.
+- Local backend errors about Python or faster-whisper:
+  - The installer creates a venv at `~/.mrp/venv` and sets `MRP_PY` to that interpreter. Ensure your shell loaded `~/.mrp.env` or run `export MRP_PY=$HOME/.mrp/venv/bin/python`.
+- CUDA not used when expected:
+  - Add `--local-device cuda`. Ensure CUDA toolkit and compatible drivers are installed.
+
 ## Future Direction
 
 - Expose a long-running service and trigger from Google Drive/Meet callbacks
 - Post-process transcript with prompts to file issues or summaries
 - Persist results and metadata, add speaker mapping using attendee names
-Or run the installer (interactive):
-
-```
-curl -fsSL https://raw.githubusercontent.com/zudsniper/meet-recording-processor/main/scripts/install.sh | bash
-```
-
-Non-interactive (accept defaults):
-
-```
-curl -fsSL https://raw.githubusercontent.com/zudsniper/meet-recording-processor/main/scripts/install.sh | bash -s -- -y
-```
