@@ -17,28 +17,29 @@ def main():
         sys.stderr.write('faster-whisper not installed. pip install faster-whisper\n')
         sys.exit(2)
 
-    device = None
-    compute_type = None
-    if args.device == 'auto':
-        device = 'auto'
-    elif args.device == 'cuda':
+    # Choose device and compute_type with safe defaults (avoid None)
+    if args.device == 'cuda':
         device = 'cuda'
         compute_type = 'float16'
+    elif args.device == 'cpu':
+        device = 'cpu'
+        compute_type = 'int8'
     else:
+        # auto: start with CPU int8, will fallback to CPU anyway if CUDA fails
         device = 'cpu'
         compute_type = 'int8'
 
     t0 = perf_counter()
     try:
-        model = WhisperModel(args.model, device=device if device!='auto' else None, compute_type=compute_type)
+        model = WhisperModel(args.model, device=device, compute_type=compute_type or 'default')
         device_used = device
     except Exception as e:
         # Fallback to CPU if CUDA/cuDNN missing or broken
         msg = str(e).lower()
-        if args.device == 'cuda' and ("cudnn" in msg or "cuda" in msg or "invalid handle" in msg):
+        if device == 'cuda' and ("cudnn" in msg or "cuda" in msg or "invalid handle" in msg):
             sys.stderr.write('CUDA initialization failed; falling back to CPU (int8).\n')
             device_used = 'cpu'
-            model = WhisperModel(args.model, device=None, compute_type='int8')
+            model = WhisperModel(args.model, device='cpu', compute_type='int8')
         else:
             raise
     segments, info = model.transcribe(args.audio)
