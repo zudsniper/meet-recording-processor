@@ -100,7 +100,7 @@ func main() {
     flag.StringVar(&cfModel, "cf-model", "@cf/openai/whisper", "Cloudflare AI model identifier")
 
     flag.StringVar(&localModel, "local-model", "base.en", "faster-whisper model name or path (e.g., base.en, medium, or local path)")
-    flag.StringVar(&localDevice, "local-device", "auto", "Device for local model: auto|cpu|cuda")
+    flag.StringVar(&localDevice, "local-device", "auto", "Device for local model: auto|cpu|cuda (default respects MRP_DEFAULT_LOCAL_DEVICE)")
 
     flag.Parse()
 
@@ -150,6 +150,14 @@ func main() {
     case "local":
         if model != "" {
             localModel = model
+        }
+        // Respect env default for device if user did not choose
+        if strings.ToLower(localDevice) == "auto" {
+            if envDev := strings.ToLower(strings.TrimSpace(os.Getenv("MRP_DEFAULT_LOCAL_DEVICE"))); envDev == "cpu" || envDev == "cuda" {
+                localDevice = envDev
+            } else if envDev2 := strings.ToLower(strings.TrimSpace(os.Getenv("MRP_LOCAL_DEVICE"))); envDev2 == "cpu" || envDev2 == "cuda" {
+                localDevice = envDev2
+            }
         }
         be = transcribe.NewFasterWhisperBackend(localModel, localDevice)
     default:

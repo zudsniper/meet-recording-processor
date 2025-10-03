@@ -156,6 +156,31 @@ setup_venv() {
   export MRP_PY="$venv_dir/bin/python"
 }
 
+detect_nvidia() {
+  if command -v nvidia-smi >/dev/null 2>&1; then return 0; fi
+  if command -v lspci >/dev/null 2>&1 && lspci | grep -qi nvidia; then return 0; fi
+  if [[ -e /proc/driver/nvidia/version ]]; then return 0; fi
+  return 1
+}
+
+persist_env_kv() {
+  local k="$1" v="$2"; shift 2 || true
+  local envfile="$HOME/.mrp.env"
+  mkdir -p "$HOME/.mrp"
+  # remove any previous line for the key
+  if [[ -f "$envfile" ]]; then
+    grep -v "^export ${k}=" "$envfile" >"$envfile.tmp" || true
+    mv "$envfile.tmp" "$envfile"
+  fi
+  echo "export ${k}='${v}'" >> "$envfile"
+  # ensure shell sources envfile
+  local shell_rc
+  if [[ -n "${ZSH_VERSION:-}" ]]; then shell_rc="$HOME/.zshrc"; else shell_rc="$HOME/.bashrc"; fi
+  if ! grep -q ".mrp.env" "$shell_rc" 2>/dev/null; then
+    echo "source \"$envfile\"" >> "$shell_rc"
+  fi
+}
+
 install_go_linux() {
   local GOV=1.22.0
   local OSSTR=linux
@@ -245,6 +270,28 @@ main() {
   fi
   ensure_go_in_path
   setup_venv || warn "Could not set up venv; faster-whisper may be missing"
+
+  # Suggest CUDA default if NVIDIA GPU is present
+  if detect_nvidia; then
+    say "Detected NVIDIA GPU 🧩"
+    if [[ "$YES" == "true" ]]; then
+      DEFAULT_LOCAL_DEVICE="cuda"
+    else
+      read -r -p "Use CUDA by default for local transcription? [Y/n] " ans; ans=${ans:-Y}
+      if [[ $ans =~ ^[Yy]$ ]]; then DEFAULT_LOCAL_DEVICE="cuda"; else DEFAULT_LOCAL_DEVICE="cpu"; fi
+    fi
+    persist_env_kv "MRP_DEFAULT_LOCAL_DEVICE" "$DEFAULT_LOCAL_DEVICE"
+    ok "Default local device set to: $DEFAULT_LOCAL_DEVICE (persisted in ~/.mrp.env)"
+  else
+    warn "No NVIDIA GPU detected. Local transcription will run on CPU and may be slow."
+    if [[ "$YES" == "false" ]]; then
+      read -r -p "Prefer to set cloud backends later? Continue with CPU local default? [Y/n] " cont; cont=${cont:-Y}
+      if [[ ! $cont =~ ^[Yy]$ ]]; then
+        warn "You can rerun the installer anytime. Exiting per request."; exit 0
+      fi
+    fi
+    persist_env_kv "MRP_DEFAULT_LOCAL_DEVICE" "cpu"
+  fi
 
   say "Building and installing mrp 🛠️"
   build_and_install_mrp

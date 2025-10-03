@@ -50,7 +50,7 @@ Common flags:
 Local faster-whisper specific:
 
 - `--local-model` (e.g., `base.en`, `small`, or local path)
-- `--local-device` `auto|cpu|cuda` (default `auto`)
+- `--local-device` `auto|cpu|cuda` (default `auto`, but respects `MRP_DEFAULT_LOCAL_DEVICE` if set)
 - `MRP_PY` env var controls which Python interpreter is used (installer sets it to the venv python).
 
 OpenAI-specific:
