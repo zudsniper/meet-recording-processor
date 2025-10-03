@@ -179,7 +179,9 @@ persist_env_kv() {
     grep -v "^export ${k}=" "$envfile" >"$envfile.tmp" || true
     mv "$envfile.tmp" "$envfile"
   fi
-  echo "export ${k}='${v}'" >> "$envfile"
+  # robust single-quote escaping
+  esc_v=$(printf %s "$v" | sed "s/'/'\\''/g")
+  echo "export ${k}='${esc_v}'" >> "$envfile"
   # ensure shell sources envfile
   local shell_rc
   if [[ -n "${ZSH_VERSION:-}" ]]; then shell_rc="$HOME/.zshrc"; else shell_rc="$HOME/.bashrc"; fi
@@ -265,11 +267,13 @@ setup_env() {
       read -r -p "Cloudflare Account ID (for --backend cloudflare, blank to skip): " CF_ACCOUNT_ID || true
       read -r -p "Cloudflare API Token (for --backend cloudflare, blank to skip): " CF_API_TOKEN || true
       local envfile="$HOME/.mrp.env"
+      # write with escaping
+      esc() { printf %s "$1" | sed "s/'/'\\''/g"; }
       {
-        [[ -n "${OPENAI_API_KEY:-}" ]] && echo "export OPENAI_API_KEY='$OPENAI_API_KEY'"
-        [[ -n "${CF_ACCOUNT_ID:-}" ]] && echo "export CF_ACCOUNT_ID='$CF_ACCOUNT_ID'"
-        [[ -n "${CF_API_TOKEN:-}" ]] && echo "export CF_API_TOKEN='$CF_API_TOKEN'"
-        [[ -n "${MRP_PY:-}" ]] && echo "export MRP_PY='$MRP_PY'"
+        [[ -n "${OPENAI_API_KEY:-}" ]] && printf "export OPENAI_API_KEY='%s'\n" "$(esc "$OPENAI_API_KEY")"
+        [[ -n "${CF_ACCOUNT_ID:-}" ]] && printf "export CF_ACCOUNT_ID='%s'\n" "$(esc "$CF_ACCOUNT_ID")"
+        [[ -n "${CF_API_TOKEN:-}" ]] && printf "export CF_API_TOKEN='%s'\n" "$(esc "$CF_API_TOKEN")"
+        [[ -n "${MRP_PY:-}" ]] && printf "export MRP_PY='%s'\n" "$(esc "$MRP_PY")"
       } >> "$envfile"
       ok "Saved keys to $envfile"
 
@@ -404,7 +408,7 @@ EOG
 
   setup_env
 
-  ok "Installation complete! ✨ Try: \033[1m mrp --help \033[0m"
+  printf "%b %s\n" "$emoji_ok" "Installation complete! ✨ Try: \033[1m mrp --help \033[0m"
   say "Local backend uses faster-whisper in a venv."
   say "Ubuntu ${DISTRO_VERSION_ID:-} detected: using apt-get where applicable."
 
